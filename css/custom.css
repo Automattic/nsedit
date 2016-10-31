@@ -1,0 +1,29 @@
+#domsearch {
+    box-shadow: inset 0 0 0 2px #65e4c2;
+    outline: none;
+    background-color: #fff;
+    border: 1px solid #00bf8c;
+    border-radius: 3px;
+    box-sizing: border-box;
+    color: #374555;
+    font-family: Lato,sans-serif;
+    font-size: 1.6rem;
+    padding: 18px 16px;
+    -webkit-transition: background-color .15s ease-in-out,border-color .15s ease-in-out,box-shadow .15s ease-in-out,color .15s ease-in-out;
+    transition: background-color .15s ease-in-out,border-color .15s ease-in-out,box-shadow .15s ease-in-out,color .15s ease-in-out;
+    width: 60%;
+    margin-bottom: 30px;
+}
+
+div.jtable-main-container > div.jtable-title div.jtable-toolbar span.jtable-toolbar-item {
+    background-color: #00bf8c;
+    border-radius: 8px 8px 0 0;
+    color: #FFFFFF;
+    padding: 6px;
+}
+
+div.jtable-main-container > table.jtable > thead {
+    background-color: #00bf8c;
+    border: 1px solid #009970;
+    color: #FFFFFF;
+}

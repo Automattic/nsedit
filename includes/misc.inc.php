@@ -21,11 +21,6 @@ if (!isset($apisslverify)) {
     $apisslverify = ( bool ) $apisslverify;
 }
 
-if (!isset($authdb)) {
-    $errormsg = "You did not configure a value for the setting \$authdb in your config";
-    $blocklogin = TRUE;
-}
-
 if (isset($defaults['primaryns'])) {
     $errormsg = "You should reconfigure your \$defaults['primaryns'] settings to use <code>\$defaults['ns'][0]</code>. We converted if for you now.";
     $defaults['ns'][] = $defaults['primaryns'];
@@ -59,15 +54,6 @@ if (function_exists('openssl_random_pseudo_bytes') === FALSE) {
 
 $defaults['defaulttype'] = ucfirst(strtolower($defaults['defaulttype']));
 
-if (isset($authdb) && !file_exists($authdb) && class_exists('SQLite3')) {
-    is_dir(dirname($authdb)) || mkdir(dirname($authdb));
-    $db = new SQLite3($authdb, SQLITE3_OPEN_CREATE|SQLITE3_OPEN_READWRITE);
-    $createsql = file_get_contents('includes/scheme.sql');
-    $db->exec($createsql);
-    $salt = bin2hex(openssl_random_pseudo_bytes(16));
-    $db->exec("INSERT INTO users (emailaddress, password, isadmin) VALUES ('admin', '".crypt("admin", '$6$'.$salt)."', 1)");
-}
-
 function string_starts_with($string, $prefix)
 {
     $length = strlen($prefix);
@@ -84,135 +70,8 @@ function string_ends_with($string, $suffix)
     return (substr($string, -$length) === $suffix);
 }
 
-function get_db() {
-    global $authdb, $db;
-
-    if (!isset($db)) {
-        $db = new SQLite3($authdb, SQLITE3_OPEN_READWRITE);
-        $db->exec('PRAGMA foreign_keys = 1');
-    }
-
-    return $db;
-}
-
-function get_all_users() {
-    $db = get_db();
-    $r = $db->query('SELECT id, emailaddress, isadmin FROM users ORDER BY emailaddress');
-    $ret = array();
-    while ($row = $r->fetchArray(SQLITE3_ASSOC)) {
-        array_push($ret, $row);
-    }
-
-    return $ret;
-}
-
-function get_user_info($u) {
-    $db = get_db();
-    $q = $db->prepare('SELECT * FROM users WHERE emailaddress = ?');
-    $q->bindValue(1, $u);
-    $result = $q->execute();
-    $userinfo = $result->fetchArray(SQLITE3_ASSOC);
-
-    return $userinfo;
-}
-
-function user_exists($u) {
-    return (bool) get_user_info($u);
-}
-
-function do_db_auth($u, $p) {
-    $db = get_db();
-    $q = $db->prepare('SELECT * FROM users WHERE emailaddress = ?');
-    $q->bindValue(1, $u);
-    $result = $q->execute();
-    $userinfo = $result->fetchArray(SQLITE3_ASSOC);
-
-    if ($userinfo and $userinfo['password'] and (crypt($p, $userinfo['password']) === $userinfo['password'])) {
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
-function add_user($username, $isadmin = FALSE, $password = '') {
-    if (!$password) {
-        $password = bin2hex(openssl_random_pseudo_bytes(32));
-    }
-    if (!string_starts_with($password, '$6$')) {
-        $salt = bin2hex(openssl_random_pseudo_bytes(16));
-        $password = crypt($password, '$6$'.$salt);
-    }
-
-    $db = get_db();
-    $q = $db->prepare('INSERT INTO users (emailaddress, password, isadmin) VALUES (?, ?, ?)');
-    $q->bindValue(1, $username, SQLITE3_TEXT);
-    $q->bindValue(2, $password, SQLITE3_TEXT);
-    $q->bindValue(3, (int)(bool) $isadmin, SQLITE3_INTEGER);
-    $ret = $q->execute();
-
-    if ($isadmin) {
-        writelog("Added user $username as admin.");
-    } else {
-        writelog("Added user $username.");
-    }
-    return $ret;
-}
-
-function update_user($id, $isadmin, $password) {
-    if ($password && !preg_match('/\$6\$/', $password)) {
-        $salt = bin2hex(openssl_random_pseudo_bytes(16));
-        $password = crypt($password, '$6$'.$salt);
-    }
-
-    $db = get_db();
-
-    $q = $db->prepare('SELECT * FROM users WHERE id = ?');
-    $q->bindValue(1, $id, SQLITE3_INTEGER);
-    $result = $q->execute();
-    $userinfo = $result->fetchArray(SQLITE3_ASSOC);
-    $q->close();
-    $username = $userinfo['emailaddress'];
-
-    if ($password) {
-        $q = $db->prepare('UPDATE users SET isadmin = ?, password = ? WHERE id = ?');
-        $q->bindValue(1, (int)(bool)$isadmin, SQLITE3_INTEGER);
-        $q->bindValue(2, $password, SQLITE3_TEXT);
-        $q->bindValue(3, $id, SQLITE3_INTEGER);
-        writelog("Updating password and/or settings for $username. Admin: ".(int)(bool)$isadmin);
-    } else {
-        $q = $db->prepare('UPDATE users SET isadmin = ? WHERE id = ?');
-        $q->bindValue(1, (int)(bool)$isadmin, SQLITE3_INTEGER);
-        $q->bindValue(2, $id, SQLITE3_INTEGER); 
-        writelog("Updating settings for $username. Admin: ".(int)(bool)$isadmin);
-    }
-    $ret = $q->execute();
-
-    return $ret;
-}
-
-function delete_user($id) {
-    $db = get_db();
-
-    $q = $db->prepare('SELECT * FROM users WHERE id = ?');
-    $q->bindValue(1, $id, SQLITE3_INTEGER);
-    $result = $q->execute();
-    $userinfo = $result->fetchArray(SQLITE3_ASSOC);
-    $q->close();
-
-    if($userinfo) {
-        $q = $db->prepare('DELETE FROM users WHERE id = ?');
-        $q->bindValue(1, $id, SQLITE3_INTEGER);
-        $ret = $q->execute();
-
-        writelog("Deleted user " . $userinfo['emailaddress'] . ".");
-        return $ret;
-    } else {
-        return false;
-    }
-}
-
-function valid_user($name) {
-    return ( bool ) preg_match( "/^[a-z0-9@_.-]+$/i" , $name );
+function writelog( $string1, $string2 = '' ) {
+    l( $string1 . ' ' . $string2 );
 }
 
 function jtable_respond($records, $method = 'multiple', $msg = 'Undefined errormessage') {
@@ -238,8 +97,6 @@ function jtable_respond($records, $method = 'multiple', $msg = 'Undefined errorm
         $jTableResult['RecordCount'] = count($records);
     }
 
-    $db = get_db();
-    $db->close();
     header('Content-Type: application/json');
     print json_encode($jTableResult);
     exit(0);
@@ -265,110 +122,6 @@ function user_template_names() {
         $templatenames[$template['name']] = $template['name'];
     }
     return $templatenames;
-}
-
-function getlogs() {
-    global $logging;
-    if ($logging !== TRUE)
-        return;
-
-    $db = get_db();
-    $r = $db->query('SELECT * FROM logs ORDER BY timestamp DESC');
-    $ret = array();
-    while ($row = $r->fetchArray(SQLITE3_ASSOC)) {
-        array_push($ret, $row);
-    }
-
-    return $ret;
-}
-
-function clearlogs() {
-    global $logging;
-    if ($logging !== TRUE)
-        return;
-
-    $db = get_db();
-    $q = $db->query('DELETE FROM logs;');
-    writelog("Logtable truncated.");
-}
-
-function rotatelogs() {
-    global $logging, $logsdirectory;
-    if ($logging !== TRUE)
-        return FALSE;
-
-    if(!is_dir($logsdirectory) || !is_writable($logsdirectory)) {
-      writelog("Logs directory cannot be written to.");
-      return FALSE;
-    }
-
-    date_default_timezone_set('UTC');
-    $filename = date("Y-m-d-His") . ".json";
-    $file = fopen($logsdirectory . "/" . $filename, "x");
-
-    if($file === FALSE) {
-      writelog("Can't create file for log rotation.");
-      return FALSE;
-    }
-
-    if(fwrite($file,json_encode(getlogs())) === FALSE) {
-        writelog("Can't write to file for log rotation.");
-        fclose($file);
-        return FALSE;
-    } else {
-        fclose($file);
-        clearlogs();
-        return $filename;
-    }
-
-}
-
-function listrotatedlogs() {
-    global $logging, $logsdirectory;
-    if ($logging !== TRUE)
-        return FALSE;
-
-    $list = scandir($logsdirectory,SCANDIR_SORT_DESCENDING);
-
-    if($list === FALSE) {
-      writelog("Logs directory cannot read.");
-      return FALSE;
-    }
-
-    $list=array_filter($list,
-        function ($val) {
-            return(preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}\.json/',$val) == 1);
-        }
-    );
-
-    return $list;
-}
-
-function writelog($line, $user=False) {
-    global $logging;
-    if ($logging !== TRUE)
-        return;
-
-    if ($user === False) {
-        $user = get_sess_user();
-    }
-
-    try {
-        $db = get_db();
-        $q = $db->prepare('CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY,
-            user TEXT NOT NULL,
-            log TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);');
-        $ret = $q->execute();
-
-        $q = $db->prepare('INSERT INTO logs (user, log) VALUES (:user, :log)');
-        $q->bindValue(':user', $user, SQLITE3_TEXT);
-        $q->bindValue(':log', $line, SQLITE3_TEXT);
-        $q->execute();
-    } catch (Exception $e) {
-        return jtable_respond(null, 'error', $e->getMessage());
-    }
 }
 
 /* This function was taken from https://gist.github.com/rsky/5104756 to make

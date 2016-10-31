@@ -1,22 +1,20 @@
 <?php
 
 include_once('ApiHandler.php');
+include_once( __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'request.php' );
 
 class PdnsAPI {
-    public function __construct() {
-        $this->http = new ApiHandler();
-    }
-
     public function listzones($q = FALSE) {
-        $api = clone $this->http;
-        $api->method = 'GET';
         if ($q) {
-            $api->url = "/servers/localhost/search-data?q=*".$q."*&max=25";
-            $api->call();
             $ret = Array();
             $seen = Array();
 
-            foreach ($api->json as $result) {
+			$api_result = call_api_audited( [
+				'method' => 'GET',
+				'url' => "/servers/localhost/search-data?q=*".$q."*&max=25"
+			] );
+
+            foreach ($api_result as $result) {
                 if (isset($seen[$result['zone_id']])) {
                     continue;
                 }
@@ -28,81 +26,83 @@ class PdnsAPI {
 
             return $ret;
         }
-        $api->url = "/servers/localhost/zones";
-        $api->call();
-
-        return $api->json;
+		
+		return call_api_audited( [
+			'method' => 'GET',
+			'url' => '/servers/localhost/zones'
+		] );
     }
 
     public function loadzone($zoneid) {
-        $api = clone $this->http;
-        $api->method = 'GET';
-        $api->url = "/servers/localhost/zones/$zoneid";
-        $api->call();
-
-        return $api->json;
+        return call_api_audited( [
+			'method' => 'GET',
+			'url' => "/servers/localhost/zones/$zoneid"
+		] );
     }
 
     public function exportzone($zoneid) {
-        $api = clone $this->http;
-        $api->method = 'GET';
-        $api->url = "/servers/localhost/zones/$zoneid/export";
-        $api->call();
-
-        return $api->json;
+		return call_api_audited( [
+			'method' => 'GET',
+			'url' => "/servers/localhost/zones/$zoneid/export"
+		] );  
     }
 
     public function savezone($zone) {
-        $api = clone $this->http;
         // We have to split up RRSets and Zoneinfo.
         // First, update the zone
 
         $zonedata = $zone;
-        unset($zonedata['id']);
-        unset($zonedata['url']);
-        unset($zonedata['rrsets']);
-
-        if (!isset($zone['serial']) or gettype($zone['serial']) != 'integer') {
+        unset( $zonedata['id'] );
+        unset( $zonedata['url'] ) ;
+        unset( $zonedata['rrsets'] ) ;
+		unset( $zonedata[ 'account' ] ); // we don't allow settings an account field because that we use to determine ownership    
+		/* we don't create zones here
+	    if (!isset($zone['serial']) or gettype($zone['serial']) != 'integer') {
             $api->method = 'POST';
             $api->url = '/servers/localhost/zones';
             $api->content = json_encode($zonedata);
             $api->call();
 
             return $api->json;
-        }
-        $api->method = 'PUT';
-        $api->url = $zone['url'];
-        $api->content = json_encode($zonedata);
-        $api->call();
+        }*/
+
+
+		call_api_audited( [
+			'method' => 'PUT',
+			'url' => $zone[ 'url' ],
+			'content' => json_encode( $zonedata )
+		] );
 
         // Then, update the rrsets
-        if (count($zone['rrsets']) > 0) {
-            $api->method = 'PATCH';
-            $api->content = json_encode(Array('rrsets' => $zone['rrsets']));
-            $api->call();
+        if ( count( $zone['rrsets'] ) > 0 ) {
+			call_api_audited( [
+				'method' => 'PATCH',
+				'url' => $zone[ 'url' ],
+				'content' => json_encode( [ 'rrsets' => $zone['rrsets'] ] )
+			] );
         }
 
-        return $this->loadzone($zone['id']);
+        return $this->loadzone( $zone['id'] );
     }
 
     public function deletezone($zoneid) {
-        $api = clone $this->http;
-        $api->method = 'DELETE';
-        $api->url = "/servers/localhost/zones/$zoneid";
-        $api->call();
-
-        return $api->json;
+	/* we don't support deleting zones
+		return call_api_audited( [
+			'method' => 'DELETE',
+			'url' =>  "/servers/localhost/zones/$zoneid"
+		] );
+*/
     }
 
     public function getzonekeys($zoneid) {
         $ret = array();
-        $api = clone $this->http;
-        $api->method = 'GET';
-        $api->url = "/servers/localhost/zones/$zoneid/cryptokeys";
 
-        $api->call();
+		$api_result = call_api_audited( [
+			'method' => 'GET',
+			'url' =>  "/servers/localhost/zones/$zoneid/cryptokeys"
+		] );
 
-        foreach ($api->json as $key) {
+        foreach ( $api_result as $key) {
             if (!isset($key['active']))
                 continue;
 

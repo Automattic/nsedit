@@ -6,12 +6,6 @@ include_once('includes/misc.inc.php');
 include_once('includes/class/PdnsApi.php');
 include_once('includes/class/Zone.php');
 
-if (!is_csrf_safe()) {
-    header('Status: 403');
-    header('Location: ./index.php');
-    jtable_respond(null, 'error', "Authentication required");
-}
-
 /* This function is taken from:
 http://pageconfig.com/post/how-to-validate-ascii-text-in-php and got fixed by
 #powerdns */
@@ -25,7 +19,7 @@ function _valid_label($name) {
 }
 
 function decode_record_id($id) {
-    $record = json_decode($id, 1);
+    $record = json_decode(stripslashes($id), 1);
     if (!$record
         || !isset($record['name'])
         || !isset($record['type'])
@@ -95,48 +89,7 @@ function record_compare_content($a, $b) {
     return 0;
 }
 
-function add_db_zone($zonename, $accountname) {
-    if (valid_user($accountname) === false) {
-        jtable_respond(null, 'error', "$accountname is not a valid username");
-    }
-    if (!_valid_label($zonename)) {
-        jtable_respond(null, 'error', "$zonename is not a valid zonename");
-    }
-
-    if (is_apiuser() && !user_exists($accountname)) {
-        add_user($accountname);
-    }
-
-    $db = get_db();
-    $q = $db->prepare("INSERT OR REPLACE INTO zones (zone, owner) VALUES (?, (SELECT id FROM users WHERE emailaddress = ?))");
-    $q->bindValue(1, $zonename, SQLITE3_TEXT);
-    $q->bindValue(2, $accountname, SQLITE3_TEXT);
-    $q->execute();
-}
-
-function delete_db_zone($zonename) {
-    if (!_valid_label($zonename)) {
-        jtable_respond(null, 'error', "$zonename is not a valid zonename");
-    }
-    $db = get_db();
-    $q = $db->prepare("DELETE FROM zones WHERE zone = ?");
-    $q->bindValue(1, $zonename, SQLITE3_TEXT);
-    $q->execute();
-}
-
 function get_zone_account($zonename, $default) {
-    if (!_valid_label($zonename)) {
-        jtable_respond(null, 'error', "$zonename is not a valid zonename");
-    }
-    $db = get_db();
-    $q = $db->prepare("SELECT u.emailaddress FROM users u, zones z WHERE z.owner = u.id AND z.zone = ?");
-    $q->bindValue(1, $zonename, SQLITE3_TEXT);
-    $result = $q->execute();
-    $zoneinfo = $result->fetchArray(SQLITE3_ASSOC);
-    if (isset($zoneinfo['emailaddress']) && $zoneinfo['emailaddress'] != null ) {
-        return $zoneinfo['emailaddress'];
-    }
-
     return $default;
 }
 
@@ -163,7 +116,7 @@ case "listslaves":
         $zone = new Zone();
         $zone->parse($sresult);
         if ($zone->account == '') {
-            $zone->setAccount(get_zone_account($zone->name, 'admin'));
+            $zone->setAccount('admin');
         }
 
         if (!check_account($zone))
@@ -238,7 +191,6 @@ case "delete":
     $zone = $api->loadzone($_POST['id']);
     $api->deletezone($_POST['id']);
 
-    delete_db_zone($zone['name']);
     writelog("Deleted zone ".$zone['name']);
     jtable_respond(null, 'delete');
     break;
@@ -298,10 +250,8 @@ case "create":
     $zonename = $zone->name;
 
     if (is_adminuser() && isset($_POST['account'])) {
-        add_db_zone($zonename, $_POST['account']);
         $zone->setAccount($_POST['account']);
     } else {
-        add_db_zone($zonename, get_sess_user());
         $zone->setAccount(get_sess_user());
     }
 
@@ -343,7 +293,6 @@ case "update":
             header("Status: 403 Access denied");
             jtable_respond(null, 'error', "Can't change account");
         } else {
-            add_db_zone($zone->name, $zoneaccount);
             $zone->setAccount($zoneaccount);
         }
     }
@@ -505,7 +454,7 @@ case "getformnameservers":
         if ($template['name'] !== $_GET['template']) continue;
         foreach ($template['records'] as $record) {
             if ($record['type'] == "NS" and array_search($record['content'], $inputs) === false) {
-		array_push($inputs, $record['content']);
+                array_push($inputs, $record['content']);
                 echo '<input type="text" name="nameserver[]" value="'.$record['content'].'" readonly /><br />';
             }
         }
